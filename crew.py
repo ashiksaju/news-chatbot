@@ -24,10 +24,9 @@ except Exception:
         def __init__(self, *args, **kwargs):
             pass
 
-# Respect an environment override to force Groq-only mode
-GROQ_ONLY = os.getenv("GROQ_ONLY", "true").lower() in ("1", "true", "yes")
-if GROQ_ONLY:
-    CREWAI_AVAILABLE = False
+# Force agent mode - disable Groq-only
+GROQ_ONLY = False
+CREWAI_AVAILABLE = True
 
 # ----------------------------
 # News Tool
@@ -63,100 +62,88 @@ class NewsTool(BaseTool):
             return f"Error getting news: {str(e)}"
 
 # ----------------------------
-# LLM Configuration (use OpenAI to avoid google-genai extras)
+# Simple Agent using Groq directly
 # ----------------------------
-# Use OpenAI provider only when crewai is available and OPENAI_API_KEY is present
-openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_llm = None
-if CREWAI_AVAILABLE and openai_api_key:
-    try:
-        openai_llm = LLM(
-            model="gpt-4o",
-            api_key=openai_api_key,
-            provider="openai"
-        )
-    except Exception as e:
-        print(f"❌ Failed to initialize OpenAI LLM: {e}")
-        openai_llm = None
-else:
-    if not CREWAI_AVAILABLE:
-        print("⚠️ CrewAI not available; LLM disabled.")
-    else:
-        print("⚠️ OPENAI_API_KEY not set; LLM disabled. Set it in your .env or environment to enable LLM features.")
-    openai_llm = None
+class FitnessAgent:
+    def __init__(self):
+        self.name = "Ash"
+        self.role = "Personal Fitness Coach"
+        
+    def process_query(self, topic):
+        """Process fitness query using agent-like behavior"""
+        # Check if topic is fitness related
+        fitness_keywords = ['gym', 'fitness', 'workout', 'exercise', 'muscle', 'strength', 'training', 
+                           'bodybuilding', 'cardio', 'weight', 'protein', 'nutrition', 'diet', 
+                           'supplements', 'health', 'athletic', 'sport', 'physical', 'body']
+        
+        topic_lower = topic.lower()
+        is_fitness_related = any(keyword in topic_lower for keyword in fitness_keywords)
+        
+        if not is_fitness_related:
+            return "Hey there! I'm Ash, your fitness agent! 💪 I specialize in workouts, nutrition, muscle building, and fitness goals. What fitness challenge can I help you with?"
+        
+        # Use Groq for response generation (silent processing)
+        return self._generate_response(topic)
+    
+    def _generate_response(self, topic):
+        """Generate response using Groq API"""
+        agent_prompt = f"""
+You are Ash, a personal fitness coach agent. You have these characteristics:
+- Role: Personal Fitness Coach
+- Goal: Provide helpful, concise fitness advice
+- Personality: Friendly, enthusiastic, encouraging
+- Response style: 2-3 sentences max, practical and motivating
 
-# ----------------------------
-# News Agents (create only if crewai is available and not forcing Groq-only)
-# ----------------------------
-news_researcher = None
-news_analyst = None
-news_crew = None
-research_task = None
-analysis_task = None
+User query: "{topic}"
 
-if CREWAI_AVAILABLE and not GROQ_ONLY:
-    # Create agents with clear roles and minimal complexity
-    news_researcher = Agent(
-        name="NewsResearcher",
-        role="News Research Specialist",
-        goal="Find current news and relevant information",
-        backstory="You are an expert researcher who quickly finds accurate and current news information.",
-        llm=openai_llm if openai_llm is not None else None,
-        tools=[NewsTool()],
-        verbose=False,
-        allow_delegation=False
-    )
+As agent Ash, provide a brief, helpful response:
+"""
+        
+        try:
+            from groq import Groq
+            client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    news_analyst = Agent(
-        name="NewsAnalyst",
-        role="News Analyst",
-        goal="Analyze news and provide insights",
-        backstory="You are a skilled analyst who can identify key trends and provide meaningful insights from news.",
-        llm=openai_llm if openai_llm is not None else None,
-        verbose=False,
-        allow_delegation=False
-    )
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": agent_prompt}],
+                max_tokens=200,
+                temperature=0.8
+            )
+            
+            result = response.choices[0].message.content
+            return result
 
-    # Create tasks and crew
-    research_task = Task(
-        description="Search for and gather news about: {topic}",
-        expected_output="Current news articles and information about the topic",
-        agent=news_researcher,
-        async_execution=False
-    )
+        except Exception as e:
+            print(f"❌ Agent error: {str(e)}")
+            return "Hey! I'm having some technical issues right now, but I'm still here to help with your fitness goals! What would you like to work on? 💪"
 
-    analysis_task = Task(
-        description="Analyze the gathered news and provide insights about: {topic}",
-        expected_output="Comprehensive analysis with trends and implications",
-        agent=news_analyst,
-        async_execution=False
-    )
-
-    news_crew = Crew(
-        agents=[news_researcher, news_analyst],
-        tasks=[research_task, analysis_task],
-        verbose=True,
-        process="sequential"
-    )
+# Create fitness agent instance
+fitness_agent = FitnessAgent()
 
 # ----------------------------
 # Groq fallback helper
 # ----------------------------
 def _groq_fallback(topic: str):
-    """Run direct Groq fallback analysis. Returns string or None.
-
-    Improved error handling: on exception print HTTP status and response body when
-    available so a 404 can be diagnosed, and return a helpful message.
-    """
-    print("🔄 Using direct Groq analysis (fallback)")
+    """Run direct Groq fallback analysis focused on gym and fitness topics only."""
+    print("🔄 Using direct Groq fitness analysis (fallback)")
+    
+    # Check if topic is fitness/gym related
+    fitness_keywords = ['gym', 'fitness', 'workout', 'exercise', 'muscle', 'strength', 'training', 
+                       'bodybuilding', 'cardio', 'weight', 'protein', 'nutrition', 'diet', 
+                       'supplements', 'health', 'athletic', 'sport', 'physical', 'body']
+    
+    topic_lower = topic.lower()
+    is_fitness_related = any(keyword in topic_lower for keyword in fitness_keywords)
+    
+    if not is_fitness_related:
+        return "Hey there! I'm your fitness buddy here to help you crush your goals! 💪 I love talking about workouts, nutrition, muscle building, and everything gym-related. What fitness challenge can I help you tackle today?"
+    
     fallback_prompt = f"""
-Please provide a comprehensive news analysis about "{topic}".
-Include:
-1. Recent developments and key events
-2. Important context and background
-3. Expert analysis and insights
-4. Potential implications or impact
-5. Related trends and future outlook
+You are a friendly, enthusiastic fitness coach named Ash. Give SHORT but helpful responses (2-3 sentences max). Be conversational and encouraging.
+
+User asked: "{topic}"
+
+Provide a brief, practical response covering the most important points. Keep it concise but informative.
 """
     try:
         from groq import Groq
@@ -165,74 +152,37 @@ Include:
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": fallback_prompt}],
-            max_tokens=800,
-            temperature=0.7
+            max_tokens=200,
+            temperature=0.8
         )
 
         return response.choices[0].message.content
 
     except Exception as fallback_error:
-        # Print traceback for debugging
         import traceback
         print("❌ Fallback failed:", str(fallback_error))
         traceback.print_exc()
-
-        # If the SDK attached an HTTP response, try to show status and body
-        resp = getattr(fallback_error, "response", None)
-        try:
-            if resp is not None:
-                # httpx.Response or requests.Response
-                status = getattr(resp, "status_code", None) or getattr(resp, "status", None)
-                body = None
-                try:
-                    body = resp.text
-                except Exception:
-                    try:
-                        body = resp.content.decode()
-                    except Exception:
-                        body = repr(resp)
-                print(f"HTTP response status: {status}")
-                print("HTTP response body:")
-                print(body)
-        except Exception:
-            pass
-
-        print("Please verify your GROQ_API_KEY, the model name, and network access. If the model name is incorrect the API may return 404.")
-        return None
+        return "Oops! I'm having some technical hiccups right now. But hey, while I get back on track, why don't you tell me about your fitness goals? I'd love to help you plan your next workout! 🏋️‍♂️"
 
 # ----------------------------
 # Main Function
 # ----------------------------
 def get_news_analysis(topic):
-    """Get news analysis using CrewAI"""
-    print(f"📰 CrewAI News Analysis")
+    """Get fitness analysis using custom fitness agent"""
+    print(f"💪 ASHFIT AI Agent Analysis")
     print("=" * 40)
     print(f"Topic: {topic}")
     print("=" * 40)
 
-    # If LLM not configured, use Groq fallback directly
-    if openai_llm is None:
-        print("⚠️ LLM not configured — skipping CrewAI execution.")
-        result = _groq_fallback(topic)
-        if result:
-            print("\n📊 GROQ FALLBACK ANALYSIS:")
-            print("=" * 40)
-            print(result)
-        return result
-
+    # Use custom fitness agent
     try:
-        # Run the crew with proper error handling
-        result = news_crew.kickoff(inputs={"topic": topic})
-
-        print("\n📊 CREWAI ANALYSIS:")
+        result = fitness_agent.process_query(topic)
+        print("\n💪 AGENT RESPONSE:")
         print("=" * 40)
         print(result)
-
         return result
-
     except Exception as e:
-        print(f"❌ CrewAI Error: {str(e)}")
-        # Use Groq fallback if Crew fails
+        print(f"❌ Agent Error: {str(e)}")
         return _groq_fallback(topic)
 
 # ----------------------------
