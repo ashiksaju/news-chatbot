@@ -1,0 +1,8 @@
+Flask
+requests
+python-dotenv
+langchain
+langchain-groq
+langchain-huggingface
+langchain-chroma
+sentence-transformers
